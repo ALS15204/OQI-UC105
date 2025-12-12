@@ -1,0 +1,62 @@
+{
+  "graph_properties": {
+    "name": "tace_max_clique",
+    "n_nodes": 68,
+    "n_edges": 544,
+    "density": 0.23880597014925373,
+    "avg_degree": 16.0,
+    "max_degree": 32,
+    "min_degree": 2,
+    "max_possible_clique": 33
+  },
+  "results": [
+    {
+      "method": "Exact_BronKerbosch",
+      "clique": [
+        17,
+        47,
+        50,
+        55,
+        58,
+        59,
+        62,
+        64,
+        66
+      ],
+      "size": 9,
+      "is_valid": true,
+      "time": 0.0023381710052490234,
+      "timed_out": false
+    },
+    {
+      "method": "Heuristic_Greedy",
+      "clique": [
+        23,
+        47,
+        56,
+        60,
+        63,
+        67
+      ],
+      "size": 6,
+      "is_valid": true,
+      "time": 0.00015425682067871094
+    },
+    {
+      "method": "Heuristic_LocalSearch_SA",
+      "clique": [
+        4,
+        13,
+        41,
+        53,
+        56,
+        60,
+        63,
+        67
+      ],
+      "size": 8,
+      "is_valid": true,
+      "time": 0.1854076385498047
+    }
+  ]
+}

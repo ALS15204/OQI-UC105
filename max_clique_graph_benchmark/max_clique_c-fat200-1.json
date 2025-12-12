@@ -1,0 +1,98 @@
+{
+  "graph_properties": {
+    "name": "c-fat200-1",
+    "n_nodes": 200,
+    "n_edges": 1534,
+    "density": 0.0770854271356784,
+    "avg_degree": 15.34,
+    "max_degree": 17,
+    "min_degree": 14,
+    "max_possible_clique": 55
+  },
+  "results": [
+    {
+      "method": "FEM",
+      "clique": [
+        81,
+        45,
+        44,
+        82,
+        119,
+        118,
+        156,
+        155,
+        192,
+        193,
+        8,
+        7
+      ],
+      "size": 12,
+      "is_valid": true,
+      "energy": 126.0,
+      "time": 11.965674638748169,
+      "solutions_found": 30,
+      "energy_function": "balance_func"
+    },
+    {
+      "method": "Exact_BronKerbosch",
+      "clique": [
+        0,
+        1,
+        37,
+        38,
+        74,
+        75,
+        111,
+        112,
+        148,
+        149,
+        185,
+        186
+      ],
+      "size": 12,
+      "is_valid": true,
+      "time": 0.002717733383178711,
+      "timed_out": false
+    },
+    {
+      "method": "Heuristic_Greedy",
+      "clique": [
+        1,
+        2,
+        38,
+        39,
+        75,
+        76,
+        112,
+        113,
+        149,
+        150,
+        186,
+        187
+      ],
+      "size": 12,
+      "is_valid": true,
+      "time": 0.00024628639221191406
+    },
+    {
+      "method": "Heuristic_LocalSearch_SA",
+      "clique": [
+        1,
+        2,
+        38,
+        39,
+        75,
+        76,
+        112,
+        113,
+        149,
+        150,
+        186,
+        187
+      ],
+      "size": 12,
+      "is_valid": true,
+      "time": 0.4230647087097168
+    }
+  ]
+}
