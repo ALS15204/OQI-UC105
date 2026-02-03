@@ -1,41 +1,14 @@
+import math 
 import networkx as nx
 
 import numpy as np
-import matplotlib.pyplot as plt
-import math
 from math import comb, factorial
 from itertools import combinations
-from functools import partial
-
-from typing import Union
-
-from tabulate import tabulate
-import pandas as pd
-
-from scipy.linalg import sqrtm,eig
-
-
-import perceval as pcvl
-import exqalibur as xqlbr
-
-import networkx as nx
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-from math import comb, factorial
-from itertools import combinations
-from functools import partial
-
 import matplotlib.pyplot as plt
 
 
 from typing import Union
-
-from tabulate import tabulate
-import pandas as pd
-
-from scipy.linalg import sqrtm,eig
+from scipy.linalg import sqrtm
 
 
 import perceval as pcvl
@@ -43,12 +16,10 @@ import exqalibur as xqlbr
 
 from scipy import linalg 
 
-from BSutils import *
-from scipy.stats import unitary_group
-
-from itertools import permutations
 from scipy.special import factorial
-import vegas
+
+from multiprocessing import Pool, cpu_count
+from tqdm import tqdm
 
 
 
@@ -128,13 +99,13 @@ def compute_simbackend_amplitudes(unitary, instate, outstate):
 		return res
 
 def order_of_magnitude(number):
-	print("number", number)
+	# print("number", number)
 	if number == 0:
 		return -20
-	print("number", number, "order_of_magnitude", math.floor(math.log(abs(number), 10)))
+	# print("number", number, "order_of_magnitude", math.floor(math.log(abs(number), 10)))
 	return math.floor(math.log(abs(number), 10))
 
-order_of_magnitude(10**(-6))
+# order_of_magnitude(10**(-6))
 
 def get_unitary_la(A):
 	P, D, V = linalg.svd(A)
@@ -157,14 +128,14 @@ def get_unitary_la(A):
 
 	P = An
 	if all([order_of_magnitude(value.real)<-9 for row in np.identity(m)-np.dot(An, An.conj().T) for value in row]):
-		print("forcing Q = R = zeros")
+		# print("forcing Q = R = zeros")
 		Q = R = np.zeros((m,m))
 	else:
-		print("Not unitary(?)")
-		print(np.identity(m)-np.dot(An, An.conj().T))
+		# print("Not unitary(?)")
+		# print(np.identity(m)-np.dot(An, An.conj().T))
 		Q = sqrtm(np.identity(m)-np.dot(An, An.conj().T))
 		R = sqrtm(np.identity(m)-np.dot(An.conj().T, An))
-		print(Q)
+		# print(Q)
 
 	S = -An.conj().T
 	Ubmat = np.bmat([[P, Q], [R, S]])
@@ -173,6 +144,8 @@ def get_unitary_la(A):
 
 def fockdim(m,n):
 	return comb(m+n-1,n)
+
+
 
 class LimOh_sampler:
 	"""_summary_
@@ -185,7 +158,7 @@ class LimOh_sampler:
 	Preprint at https://doi.org/10.48550/arXiv.2502.12882 (2025).
 
 	"""
-	def __init__(self,input_state, output_state, unitary, nsamples,verbose=1):
+	def __init__(self,input_state, output_state, unitary, nsamples, verbose=1):
 		
 		if(self.checkFock(input_state)):
 			self.input_state = np.array([i[0][0] for i in input_state])
@@ -200,9 +173,25 @@ class LimOh_sampler:
 			"Case not covered. The approximator will be wrong :/"
 
 		self.nsamples = nsamples
-		self.trust=False
-		
+		self.trust=True
+		self.disable=True
+
+		self.result_values=[]
+		self.result_var=[]
+		self.chunk_sizes=[]
+
+		if(verbose>=1):
+			self.disable=False
+
 	def checkFock(self, state):
+		"""Check if state is a Fock state
+
+		Args:
+			state (_type_): _description_
+
+		Returns:
+			_type_: _description_
+		"""
 		return np.all(np.array([len(m)==1 for m in state]))
 		
 
@@ -216,7 +205,9 @@ class LimOh_sampler:
 		With  x=|alpha|^2 the pdf of the gamma distribution becomes # to |alpha|^{2k-1} exp^{-|\alpha|^2}
 		We just need 2k-1 = j (the number of photon)
 		
-		We do not cover superposition states as it requires a complex weighted mixing of gamma distribution
+		We do not cover superposition states as it requires a complex weighted mixing of gamma distribution; 
+		In the case of superposition states and Fock outputs, we compute the conjugate operation on Fock state as the sampling is less expensive for Fock state
+		The superposition is left in output state for simplicity
 		"""
 
 		n = np.asarray(n)
@@ -225,41 +216,211 @@ class LimOh_sampler:
 
 		return res * np.exp(1.j*np.random.uniform(0,2*np.pi,size=(*shape.shape, size)))
 
-	def approximate(self):
+	def approximate(self, chunk_size=None, clear_cache=False):
+		
+		""" The function calls the approximator on different chunks using multiprocessing when enabled
+			Each time the function is invoked, it stores in the class two lists (self.result_values,self.chunk_size) with estimator value and N_MC samples used correspongly.
+			The final average is computed as the weighted sum of every call of this function (so getting more and more precise as we call it).
+
+		Args:
+			chunk_size: if not None, activates the multiprocessing with chunk sizes for each process ofn the pool
+			clear_cache: cleans all the values stored for the cumulative MC estimation in (self.result_values,self.chunk_size)
+		
+		Returns:
+			float: the approximator from theorem 2
+		"""
+		if(clear_cache):
+				self.result_values=[]
+				self.chunk_sizes=[]
+
+		if(chunk_size==None):
+			chunk_size=self.nsamples
+			result = self.chunk_approximate(chunk_size)
+			self.result_values.append(result)
+			# self.result_variances.append(var)
+			self.chunk_sizes.append(chunk_size)
+
+		else:
+			"multiprocessing"
+			pool = Pool(cpu_count())
+			# results = pool.map(self.chunk_approximate, ((chunk_size) for _ in range(N)))
+			N = self.nsamples//chunk_size
+			for ans in tqdm(pool.imap(self.chunk_approximate, ((chunk_size) for _ in range(N))), total=N,disable=self.disable):
+				self.result_values.append(ans)
+				self.chunk_sizes.append(chunk_size)
+
+		res = np.average(self.result_values,weights=self.chunk_sizes)
+		return np.abs(res)**2
+	
+	def get_current_value(self):
+		res = np.average(self.result_values,weights=self.chunk_sizes)
+		return np.abs(res)**2
+
+	def chunk_approximate(self,chunksize,write=False):
 		"""
 		In this configuration, state_in is allways a Fock state
 		"""
-		alpha = self.sampler(self.input_state,self.nsamples)
+		# alpha is of shape (modes, Nsamples)
+		alpha = self.sampler(self.input_state,chunksize)
+		# Computing | U alpha> for each alpha
 		evolved_alpha = np.einsum('ij,jl->il',self.unitary, alpha)
-		# print(self.input_state)
+		
 
 		# Computes alpha(modes,nsamples)**fockstate(modes) -> <alpha,psi> (modes, nsamples)
-		# no need to conjugate
+		# no need to conjugate (formula already adapted)
 		denom = alpha ** self.input_state[:, None] / np.sqrt(factorial(self.input_state[:, None]))
 
-
+		# The following is trying to accelerate things when the output state (possibly in superposition can be vectorized
 		if(all(len(l) == len(self.output_state[0]) for l in self.output_state) and self.trust):
 			num_photons_out = np.array([ np.array(a)[:,0] for a in self.output_state],dtype=int)
-			amplitudes_out = np.array([ np.array(a)[:,1] for a in self.output_state],dtype=int)
+			amplitudes_out = np.array([ np.array(a)[:,1] for a in self.output_state],dtype=complex)
 			# print(amplitudes_out.shape)
-			coherentproj = alpha[:, None, :] ** num_photons_out[:, :, None] /np.sqrt(factorial(num_photons_out[:, :, None]))
-			# print(coherentproj.shape)
+
+			# Computes U alpha(modes,nsamples)**fockstate(modes) ->  <phi|U alpha> (modes, nsamples)
+			coherentproj = evolved_alpha[:, None, :] ** num_photons_out[:, :, None] /np.sqrt(factorial(num_photons_out[:, :, None]))
+			
 			num = np.einsum('ij,ijl->il',amplitudes_out.conj(),coherentproj)
 		
 		else:
-			num_photons_out = [ np.array(a)[:,0] for a in self.output_state]#,dtype=int)
-			amplitudes_out = [ np.array(a)[:,1] for a in self.output_state]#,dtype=int)
+			# non vectorised version, list comprehension instead
+			num_photons_out = [ np.array(a)[:,0] for a in self.output_state]
+			amplitudes_out = [ np.array(a)[:,1] for a in self.output_state]
 
-			# print(num_photons_out)
-			# print(amplitudes_out)		
+			
 			# num photons can be of different size per mode, comprehension list instead of vectorized version
+			# Computes U alpha(modes,nsamples)**fockstate(modes) -> <phi|U alpha> (modes, nsamples)
 			num = np.array([
 					amp_i.conj()@(alphai[None, :] ** ei[:, None] / np.sqrt(factorial(ei[:, None])))
 					for alphai, ei, amp_i in zip(evolved_alpha, num_photons_out,amplitudes_out) ])
 		
+		# product of each mode
 		x_alpha = np.prod(num/denom,axis=0)
+		# average of all alphas
+		mean = np.average(x_alpha)
+		# variance = np.average((x_alpha-mean)**2)
 
-		return np.abs(np.average(x_alpha))**2
+		return mean
+
+
+
+class find_densest_subgraph():
+	def __init__(self,G, k, method='exact', verbose=0):
+		"""_summary_
+
+		Args:
+			G (graph): adjacency matrix of the graph
+			k (int, optional): size of the subgraph to search for
+		"""
+
+		m = G.number_of_nodes()
+		adj = nx.adjacency_matrix(G).toarray()
+
+		unitary,lsv = get_unitary_la(adj)
+
+		# if(method='exact'):
+
+		# if(superposition):
+		output = [ 
+				[1 if i in c else 0 for i in range(m)]
+				for c in combinations(np.arange(m), k )
+				if(nx.is_connected(G.subgraph(c)))
+			]
+		
+		output_translated = [
+				[ [(i,1)]  for i in o ] +[[(0,1)]]*m
+					for o in output
+				]
+		
+		keys = [''.join(  [str(e) for e in l] ) for l in output]
+		
+		if(method=="exact"):
+			self.res_pure = { k: np.abs(perm_estimation_graph(adj,o)) for k,o in zip(keys,output) }
+
+		
+		if(method=="approximate"):
+			state_translator = [ [(0,1),(1,1)] ]*m
+			s_in = state_translator +[[(0,1)]]*m
+			# print(s_in)
+			# print(output_translated[0])
+			MCsamplers = [LimOh_sampler(s_in,s_o,unitary,1_000_000,verbose=verbose) for s_o in output_translated]
+
+			self.MCestimators = dict(zip(keys,MCsamplers))
+		
+
+		# self.MCestimator = LimOh_sampler(s_in,s_o,unitary,1_000_000,verbose=verbose)
+
+	def results_pure(self):
+		res = list(self.res_pure.items())
+		res.sort(key=lambda item: item[1], reverse=True)
+		return res
+
+	def run(self,chunk_size=100_000):
+		for v in self.MCestimators.values():
+			v.approximate(chunk_size=chunk_size)
+
+	
+	def results_estimators(self):
+		res = list(self.MCestimators.items())
+		res.sort(key=lambda item: item[1].get_current_value(), reverse=True)
+		return res
+	
+	
+
+def is_subclique(G,nodelist):
+    H = G.subgraph(nodelist)
+    n = len(nodelist)
+    return H.size() == n*(n-1)/2
+
+
+def find_maxclique(G,method='exact',num_candidates=1,verbose=0):
+	"""_summary_
+
+	Args:
+		G (_type_): nx graph
+		method (str, optional): 'exact' or 'approximate' for the permanent calculation. Defaults to 'exact'.
+		num_candidates (int, optional): number of candidates expected. Defaults to 1.
+
+	Returns:
+		list: list of cliques candidates
+	"""
+	counter = 0
+	cliques = []
+	m = G.number_of_nodes()
+	candidates_k = []
+	for k in range(m,3,-1):
+		if(verbose>=1):
+			print(k)
+
+		finder = find_densest_subgraph(G,k,method=method,verbose=verbose-1)
+
+		if(method=='exact'):
+			l = finder.results_pure()[:20]
+			l =  [x[0] for x in l if x[1] == l[0][1]]
+			
+			for candidate in l:
+				nodes = [i for i,e in enumerate(list(candidate)) if e=='1' ]
+				candidates_k.append(nodes)
+
+				if(is_subclique(G,nodes) and (counter < num_candidates)):
+					counter+=1
+					# print(nodes)
+					cliques.append(nodes)
+				if(counter==num_candidates):
+					return cliques
+		else:
+			#should be run many times for accurate estimators...
+			finder.run()
+
+			l = finder.results_estimators()[0]
+			nodes = [i for i,e in enumerate(l) if e=='1' ]
+			cliques.append(nodes)
+	return cliques
+
+
+		# maxclique = np.argmax(self.MCestimators.values())
+		# return self.MCestimators.keys()[maxclique], self.MCestimators.values()[maxclique].get_current_values()
+
+# Dstate
 
 
 # The following "torch" version contains some bugs
