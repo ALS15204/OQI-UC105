@@ -250,8 +250,10 @@ class LimOh_sampler:
 			self.result_values.append(result)
 			# self.result_variances.append(var)
 			self.chunk_sizes.append(chunk_size)
-
+		
 		else:
+			if(chunk_size<self.nsamples):
+				chunk_size=self.nsamples
 			"multiprocessing"
 			pool = Pool(cpu_count())
 			# results = pool.map(self.chunk_approximate, ((chunk_size) for _ in range(N)))
@@ -315,7 +317,7 @@ class LimOh_sampler:
 
 
 class find_densest_subgraph():
-	def __init__(self,G, k, method='exact', Nsamples=1000, verbose=0):
+	def __init__(self,G, k, method='exact', Nsamples=100_000, verbose=0):
 		"""_summary_
 
 		Args:
@@ -363,7 +365,7 @@ class find_densest_subgraph():
 			MCsamplers = [LimOh_sampler(s_in,s_o,unitary,Nsamples,verbose=verbose) for s_o in output_translated]
 
 			self.MCestimators = dict(zip(keys,MCsamplers))
-		
+			self.run()
 
 		# self.MCestimator = LimOh_sampler(s_in,s_o,unitary,1_000_000,verbose=verbose)
 
@@ -390,7 +392,7 @@ def is_subclique(G,nodelist):
     return H.size() == n*(n-1)/2
 
 
-def find_maxclique(G,method='exact',out_candidates=1,verbose=0,Nsamples=1000):
+def find_maxclique(G,method='exact',out_candidates=1,verbose=0,Nsamples=100_000):
 	"""_summary_
 
 	Args:
