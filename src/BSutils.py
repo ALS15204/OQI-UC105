@@ -28,7 +28,7 @@ def density(G,state):
 	return nx.density(G.subgraph(node_list))
 
 
-def perm_estimation_graph(G: Union[nx.Graph,np.array], state):
+def perm_calculation_graph(G: Union[nx.Graph,np.array], state):
 	
 	node_list = [index for index, num in enumerate(list(state)) if num == 1]
 	if(type(G)==nx.Graph):
@@ -40,7 +40,7 @@ def perm_estimation_graph(G: Union[nx.Graph,np.array], state):
 	return xq.permanent_cx(pcvl.Matrix(submatrix), ptype="ryser")
 
 
-def superposition_perm(adj,out_state:list, k:int=None):
+def superposition_perm(adj: Union[nx.Graph,np.array],out_state:list, k:int=None):
 	# out_nodes = [index for index, num in enumerate(list(out_state)) if num == 1]
 	n = len(adj)
 	if(k==None):
@@ -252,7 +252,7 @@ class LimOh_sampler:
 			self.chunk_sizes.append(chunk_size)
 		
 		else:
-			if(chunk_size<self.nsamples):
+			if(chunk_size>self.nsamples):
 				chunk_size=self.nsamples
 			"multiprocessing"
 			pool = Pool(cpu_count())
@@ -311,7 +311,6 @@ class LimOh_sampler:
 		# average of all alphas
 		mean = np.average(x_alpha)
 		# variance = np.average((x_alpha-mean)**2)
-
 		return mean
 
 
@@ -349,14 +348,16 @@ class find_densest_subgraph():
 		keys = [''.join(  [str(e) for e in l] ) for l in output]
 		
 		if(method=="exact"):
-			self.res_pure = { k: np.abs(perm_estimation_graph(adj,o)) for k,o in zip(keys,output) }
+			self.res_pure = { k: np.abs(perm_calculation_graph(adj,o)) for k,o in zip(keys,output) }
 
 		if(method=="sampler"):
 			unitary,lsv = get_unitary_la(adj)
 			self.res_pure = { k: np.abs(CliffordSampler(unitary,o,Nsamples)) for k,o in zip(keys,output_extended) }
 
+		if(method=="exact_sbs"):
+			self.res_pure = { k: np.abs(superposition_perm(adj,o)[0]) for k,o in zip(keys,output) }
 
-		if(method=="approximate"):
+		if(method=="approximate_sbs"):
 			unitary,lsv = get_unitary_la(adj)
 			state_translator = [ [(0,1),(1,1)] ]*m
 			s_in = state_translator +[[(0,1)]]*m
@@ -365,7 +366,7 @@ class find_densest_subgraph():
 			MCsamplers = [LimOh_sampler(s_in,s_o,unitary,Nsamples,verbose=verbose) for s_o in output_translated]
 
 			self.MCestimators = dict(zip(keys,MCsamplers))
-			self.run()
+			# self.run()
 
 		# self.MCestimator = LimOh_sampler(s_in,s_o,unitary,1_000_000,verbose=verbose)
 
@@ -382,7 +383,7 @@ class find_densest_subgraph():
 	def results_estimators(self):
 		res = list(self.MCestimators.items())
 		res.sort(key=lambda item: item[1].get_current_value(), reverse=True)
-		return res
+		return [[key,val.get_current_value()] for key,val in res]
 	
 	
 
@@ -416,8 +417,9 @@ def find_maxclique(G,method='exact',out_candidates=1,verbose=0,Nsamples=100_000)
 
 		finder = find_densest_subgraph(G,k,method=method,Nsamples=Nsamples,verbose=verbose-1)
 
-		if(method=='exact' or method=='sampler'):
+		if(method=='exact' or method=='sampler' or method=='exact_sbs'):
 			l = finder.results_pure()[:20]
+			print(l)
 			l =  [x[0] for x in l if x[1] == l[0][1]]
 			
 			for candidate in l:
@@ -435,10 +437,22 @@ def find_maxclique(G,method='exact',out_candidates=1,verbose=0,Nsamples=100_000)
 			#should be run many times for accurate estimators...
 			finder.run()
 
-			l = finder.results_estimators()[0]
-			nodes = [i for i,e in enumerate(l) if e=='1' ]
-			cliques.append(nodes)
-	return cliques
+			l = finder.results_estimators()[:20]
+			# nodes = [i for i,e in enumerate(l[0]) if e=='1' ]
+			
+			l =  [x[0] for x in l if x[1] == l[0][1]]
+			
+			for candidate in l:
+				nodes = [i for i,e in enumerate(list(candidate)) if e=='1' ]
+				candidates_k.append(nodes)
+
+				if(is_subclique(G,nodes) and (counter < out_candidates)):
+					counter+=1
+					# print(nodes)
+					cliques.append(nodes)
+				if(counter==out_candidates):
+					return cliques
+
 
 
 		# maxclique = np.argmax(self.MCestimators.values())
