@@ -419,7 +419,7 @@ def find_maxclique(G,method='exact',out_candidates=1,verbose=0,Nsamples=100_000)
 
 		if(method=='exact' or method=='sampler' or method=='exact_sbs'):
 			l = finder.results_pure()[:20]
-			print(l)
+			# print(l)
 			l =  [x[0] for x in l if x[1] == l[0][1]]
 			
 			for candidate in l:
