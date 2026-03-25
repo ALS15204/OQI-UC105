@@ -390,7 +390,7 @@ def is_subclique(G,nodelist):
     return H.size() == n*(n-1)/2
 
 
-def find_maxclique(G,method='exact',out_candidates=1,verbose=0):
+def find_maxclique(G,method='exact',out_candidates=1,verbose=0,Nsamples=1000):
 	"""_summary_
 
 	Args:
@@ -408,11 +408,11 @@ def find_maxclique(G,method='exact',out_candidates=1,verbose=0):
 	cliques = []
 	m = G.number_of_nodes()
 	candidates_k = []
-	for k in range(m,3,-1):
+	for k in range(m,2,-1):
 		if(verbose>=1):
-			print(k)
+			print("search for ", k)
 
-		finder = find_densest_subgraph(G,k,method=method,verbose=verbose-1)
+		finder = find_densest_subgraph(G,k,method=method,Nsamples=Nsamples,verbose=verbose-1)
 
 		if(method=='exact' or method=='sampler'):
 			l = finder.results_pure()[:20]
