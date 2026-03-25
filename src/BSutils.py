@@ -12,7 +12,7 @@ from scipy.linalg import sqrtm
 
 
 import perceval as pcvl
-import exqalibur as xqlbr
+import exqalibur as xq
 
 from scipy import linalg 
 
@@ -37,7 +37,7 @@ def perm_estimation_graph(G: Union[nx.Graph,np.array], state):
 		submatrix = G[:,np.where(state)[0]]
 		submatrix = submatrix[np.where(state)[0],:]
 
-	return xqlbr.permanent_cx(pcvl.Matrix(submatrix), ptype="ryser")
+	return xq.permanent_cx(pcvl.Matrix(submatrix), ptype="ryser")
 
 
 def superposition_perm(adj,out_state:list, k:int=None):
@@ -59,8 +59,8 @@ def superposition_perm(adj,out_state:list, k:int=None):
 		submatrix = adj[:,np.where(i)[0]]
 		submatrix = submatrix[np.where(out_state)[0],:]
 
-		res+= xqlbr.permanent_cx(pcvl.Matrix(submatrix), ptype="ryser") #/len(input)
-		checklist.append((i,xqlbr.permanent_cx(pcvl.Matrix(submatrix), ptype="ryser"))) #/len(input)))
+		res+= xq.permanent_cx(pcvl.Matrix(submatrix), ptype="ryser") #/len(input)
+		checklist.append((i,xq.permanent_cx(pcvl.Matrix(submatrix), ptype="ryser"))) #/len(input)))
 
 	return res,checklist
 
@@ -74,7 +74,7 @@ def permanent(A, in_state, out_state=None):
 	submatrix = np.concatenate([np.tile(A[i,:],in_state[i]).reshape((in_state[i],modes)) for i in np.where(in_state)[0] ])
 	submatrix = np.concatenate([np.tile(submatrix[:,i],out_state[i]).reshape((out_state[i],photons)) for i in np.where(out_state)[0]])
 	# print(submatrix)
-	return xqlbr.permanent_cx(submatrix, ptype="ryser")
+	return xq.permanent_cx(submatrix, ptype="ryser")
 
 def expectation_value_permanent(U,in_state,out_state=None):
 	if(not out_state):
@@ -144,6 +144,17 @@ def get_unitary_la(A):
 
 def fockdim(m,n):
 	return comb(m+n-1,n)
+
+def CliffordSampler(U,state,Nsamples):
+	
+	backend = pcvl.Clifford2017Backend()
+	backend.set_circuit(pcvl.Unitary(pcvl.Matrix(U)))
+	backend.set_input_state(pcvl.BasicState(state))
+	
+	samples = backend.samples(Nsamples)
+	return samples.count(pcvl.BasicState(state))
+
+	
 
 
 
@@ -304,7 +315,7 @@ class LimOh_sampler:
 
 
 class find_densest_subgraph():
-	def __init__(self,G, k, method='exact', verbose=0):
+	def __init__(self,G, k, method='exact', Nsamples=1000, verbose=0):
 		"""_summary_
 
 		Args:
@@ -315,8 +326,6 @@ class find_densest_subgraph():
 		m = G.number_of_nodes()
 		adj = nx.adjacency_matrix(G).toarray()
 
-		unitary,lsv = get_unitary_la(adj)
-
 		# if(method='exact'):
 
 		# if(superposition):
@@ -325,7 +334,11 @@ class find_densest_subgraph():
 				for c in combinations(np.arange(m), k )
 				if(nx.is_connected(G.subgraph(c)))
 			]
-		
+		output_extended = [ 
+				[1 if i in c else 0 for i in range(m)]+[0]*m
+				for c in combinations(np.arange(m), k )
+				if(nx.is_connected(G.subgraph(c)))
+			]
 		output_translated = [
 				[ [(i,1)]  for i in o ] +[[(0,1)]]*m
 					for o in output
@@ -336,13 +349,18 @@ class find_densest_subgraph():
 		if(method=="exact"):
 			self.res_pure = { k: np.abs(perm_estimation_graph(adj,o)) for k,o in zip(keys,output) }
 
-		
+		if(method=="sampler"):
+			unitary,lsv = get_unitary_la(adj)
+			self.res_pure = { k: np.abs(CliffordSampler(unitary,o,Nsamples)) for k,o in zip(keys,output_extended) }
+
+
 		if(method=="approximate"):
+			unitary,lsv = get_unitary_la(adj)
 			state_translator = [ [(0,1),(1,1)] ]*m
 			s_in = state_translator +[[(0,1)]]*m
 			# print(s_in)
 			# print(output_translated[0])
-			MCsamplers = [LimOh_sampler(s_in,s_o,unitary,1_000_000,verbose=verbose) for s_o in output_translated]
+			MCsamplers = [LimOh_sampler(s_in,s_o,unitary,Nsamples,verbose=verbose) for s_o in output_translated]
 
 			self.MCestimators = dict(zip(keys,MCsamplers))
 		
@@ -372,13 +390,16 @@ def is_subclique(G,nodelist):
     return H.size() == n*(n-1)/2
 
 
-def find_maxclique(G,method='exact',num_candidates=1,verbose=0):
+def find_maxclique(G,method='exact',out_candidates=1,verbose=0):
 	"""_summary_
 
 	Args:
 		G (_type_): nx graph
-		method (str, optional): 'exact' or 'approximate' for the permanent calculation. Defaults to 'exact'.
-		num_candidates (int, optional): number of candidates expected. Defaults to 1.
+		method (str, optional): 'exact', 'approximate' for the permanent calculation. 
+								-'exact': by default using Ryser, and Fock input state
+								-'approximate': uses Lim & Oh algo for estimating SBS expectation values
+								-'sampler': uses perceval sampler for Fock input state
+		out_candidates (int, optional): number of candidates expected. Defaults to 1.
 
 	Returns:
 		list: list of cliques candidates
@@ -393,7 +414,7 @@ def find_maxclique(G,method='exact',num_candidates=1,verbose=0):
 
 		finder = find_densest_subgraph(G,k,method=method,verbose=verbose-1)
 
-		if(method=='exact'):
+		if(method=='exact' or method=='sampler'):
 			l = finder.results_pure()[:20]
 			l =  [x[0] for x in l if x[1] == l[0][1]]
 			
@@ -401,12 +422,13 @@ def find_maxclique(G,method='exact',num_candidates=1,verbose=0):
 				nodes = [i for i,e in enumerate(list(candidate)) if e=='1' ]
 				candidates_k.append(nodes)
 
-				if(is_subclique(G,nodes) and (counter < num_candidates)):
+				if(is_subclique(G,nodes) and (counter < out_candidates)):
 					counter+=1
 					# print(nodes)
 					cliques.append(nodes)
-				if(counter==num_candidates):
+				if(counter==out_candidates):
 					return cliques
+		
 		else:
 			#should be run many times for accurate estimators...
 			finder.run()
