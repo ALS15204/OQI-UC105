@@ -254,11 +254,15 @@ def run_1hxw_noise_benchmark():
     convert_to_pdbqt(path_rec, rec_qt)
     
     mol_rec_raw = Chem.MolFromPDBFile(path_rec, removeHs=False, sanitize=False)
-    receptor_mol_pocket = extract_pocket_by_center(mol_rec_raw, pocket_center, cutoff=10.0)
+    receptor_mol_pocket = extract_pocket_by_center(mol_rec_raw, pocket_center, cutoff=9.5)
     
     print("\n>>> Searching for the Ground Truth Clique...")
-    G, nmap, lfeats, rfeats = build_pharmacophore_graph(ligand_mol, receptor_mol_pocket, tolerance=2.0)
+    G, nmap, lfeats, rfeats = build_pharmacophore_graph(ligand_mol, receptor_mol_pocket, tolerance=3)
     
+    n = len(G.nodes())
+    m = len(G.edges())
+    rho = (2 * m) / (n * (n - 1)) if n > 1 else 0
+    print(f"  Nodes (n)={n} | Density (rho)={rho:.3f}")
     if len(G.nodes()) == 0:
         print(" [Error] Generated graph is empty.")
         return
